@@ -20,7 +20,7 @@ const reviewsRouter = require("./routes/review.js");
 const userRouter = require("./routes/user.js");
 
 // MongoDB Connection URL
-const dbUrl = process.env.ATLASDB_URL;
+const dbUrl = process.env.ATLASDB_URL || 'mongodb://localhost:27017/your-database-name';
 
 // Connect to MongoDB
 async function main() {
@@ -45,32 +45,33 @@ app.use(express.static(path.join(__dirname, "/public")));
 
 const store = new MongoStore({
   mongoUrl: dbUrl,
-  crypto: {
-    secret: process.env.SECRET,
-  },
-  touchAfter: 24 * 3600,
-});
-store.on("error", (err) => {
-  console.log("error in mongo session store", err);
+  secret: process.env.SECRET,
+  touchAfter: 24 * 3600 // time period in seconds
 });
 
-const sessionOptions = {
-  store: store,
+store.on("error", function(e) {
+  console.log("Session Store Error", e);
+});
+
+const sessionConfig = {
+  store,
+  name: 'session',
   secret: process.env.SECRET,
   resave: false,
   saveUninitialized: true,
   cookie: {
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     httpOnly: true,
     // secure: true, // Uncomment in production (requires HTTPS)
-  },
+    expires: Date.now() + 1000 * 60 * 60 * 24 * 7, // 1 week
+    maxAge: 1000 * 60 * 60 * 24 * 7
+  }
 };
 
-// Routes
-app.use(session(sessionOptions));
+app.use(session(sessionConfig));
 app.use(flash());
 app.use(passport.initialize());
 app.use(passport.session());
+
 passport.use(new LocalStrategy(User.authenticate()));
 passport.serializeUser(User.serializeUser());
 passport.deserializeUser(User.deserializeUser());
@@ -91,7 +92,7 @@ app.all("*", (req, res, next) => {
   next(new ExpressError(404, "Oops Page not Found!"));
 });
 
-// Global Error Handler
+// Global Error Handler (Should be at the end)
 app.use((err, req, res, next) => {
   const { statusCode = 500, message = "Something went wrong", stack } = err;
   res.status(statusCode).render("error.ejs", { message, stack });
